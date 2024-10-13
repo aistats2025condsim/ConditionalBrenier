@@ -33,9 +33,9 @@ class ScaledCostOT:
         self.beta = beta
         if estimator == 'NN':
             self.solver = NNTransport(**args)
-        if estimator == 'OTT':
+        elif estimator == 'OTT':
             self.solver = EntropicTransport_OTT(**args)
-        if estimator == 'ICNN':
+        elif estimator == 'ICNN':
             self.solver = ICNNTransport(input_dim=self.dx1+self.dx2, **args)
         else:
             raise ValueError('Estimator is not yet implemented')
@@ -107,12 +107,7 @@ class EntropicTransport_OTT:
 
     def evaluate_map(self, source_new):
         return self.potentials.transport(source_new)
-    
-    def drift(self,x,t):   
-        cost = (jnp.linalg.norm(x - self.target,ord=2,axis=1)**2)/t
-        cond_prob = jax.nn.softmax( (self.gYjs - cost)/self.eps )
-        return (-x + jnp.sum(self.target*cond_prob.reshape(-1,1),axis=0))/t
-        
+            
 class NNTransport:
     def __init__(self, maxiters=1000000):
         self.maxiters = maxiters
