@@ -150,7 +150,7 @@ class base_tanh():
     
     def joint_pdf(self,x,y):
         prior = self.prior_pdf(x)
-        lik = self.likelihood_function(x,y)
+        lik = self.conditional_pdf(x,y)
         return prior * lik
 
 
@@ -311,158 +311,19 @@ class Deterministic_lotka_volterra():
             loglik[j] = np.sum([stats.lognorm.logpdf(yobs,scale=xt,s=self.obs_std)])
         return loglik
 
-#### 2D Toy Problems ####
-
-class ToyDatasets():
-    def __init__(self, dataset, rng=None):
-        self.dataset = dataset
-        if rng is None:
-            rng = np.random.RandomState()
-        self.rng = rng
-
-class Checkerboard(ToyDatasets):
-    def __init__(self, scale=0.45, rng=None):
-        super(Checkerboard, self).__init__(rng)
-        self.scale  = scale
-        self.domain = [-2,2]
-
-    def sample_joint(self, N):
-        dom_range = self.domain[1] - self.domain[0]
-        x1  = np.random.rand(N)*dom_range + self.domain[0]
-        x2_ = np.random.rand(N) - np.random.randint(0,2,N)*2
-        x2  = x2_ + (np.floor(x1) % 2)
-        data = np.concatenate([x1[:,None],x2[:,None]],1) / self.scale
-        return data
-
-    def joint_pdf(self, x):
-        # re-scale data
-        x *= self.scale
-        # evaluate marginal on x1
-        supp_x1 = ((x[:,0] >= self.domain[0]) & (x[:,0] < self.domain[1]))
-        dom_range = self.domain[1] - self.domain[0]
-        pdf_x1 = 1./dom_range * supp_x1 * self.scale
-        # evaluate conditional of x2|x1
-        x2_norm = x[:,1] - (np.floor(x[:,0]) % 2)
-        supp_x2 = ((x2_norm >= -2) & (x2_norm < -1)) | ((x2_norm >= 0) & (x2_norm < 1))
-        pdf_x2condx1 = 1./2. * supp_x2 * self.scale
-        # evaluate joint pdf
-        joint_pdf = pdf_x1 * pdf_x2condx1
-        return joint_pdf
-
-    def conditional_pdf(self, x2, x1):
-        # re-scale data
-        x = np.concatenate((x1,x2),axis=1)
-        x *= self.scale
-        # evaluate conditional of x2|x1
-        x2_norm = x[:,1] - (np.floor(x[:,0]) % 2)
-        supp_x2 = ((x2_norm >= -2) & (x2_norm < -1)) | ((x2_norm >= 0) & (x2_norm < 1))
-        pdf_x2condx1 = 1./2. * supp_x2 * self.scale
-        return pdf_x2condx1
-
-class GaussianMixture(ToyDatasets):
-    def __init__(self, scale=3., rng=None):
-        super(GaussianMixture, self).__init__(rng)
-        centers = [(1, 0), (-1, 0), (0, 1), (0, -1), (1. / np.sqrt(2), 1. / np.sqrt(2)),
-                (1. / np.sqrt(2), -1. / np.sqrt(2)), (-1. / np.sqrt(2), 1. / np.sqrt(2)), 
-                (-1. / np.sqrt(2), -1. / np.sqrt(2))]
-        self.centers = [(scale * x, scale * y) for x, y in centers]
-        self.std     = 0.4
-
-    def sample_joint(self, N):
-        dataset = []
-        for i in range(N):
-            point = self.rng.randn(2) * self.std
-            idx = self.rng.randint(8)
-            center = self.centers[idx]
-            point[0] += center[0]
-            point[1] += center[1]
-            dataset.append(point)
-        dataset = np.array(dataset, dtype="float32")
-        return dataset
-
-    def joint_mean(self):
-        mean = np.zeros((2,))
-        n_centers = len(self.centers)
-        for i in range(n_centers):
-            mean += np.array(self.centers[i]) / n_centers
-        return mean
-
-    def joint_cov(self):
-        cov = np.zeros((2,2))
-        n_centers = len(self.centers)
-        global_mean = self.joint_mean()        
-        for i in range(n_centers):
-            center_mean   = self.centers[i]
-            center_var    = self.std**2*np.eye(2) 
-            center_weight = 1/len(self.centers)
-            cov += center_weight * (center_var + np.dot(center_mean - global_mean, center_mean - global_mean))
-        return cov
-
-    def joint_pdf(self, x):
-        pdf = np.zeros(x.shape[0])
-        for i in range(len(self.centers)):
-            center_mean   = self.centers[i]
-            center_cov    = self.std**2*np.eye(2) 
-            center_weight = 1/len(self.centers)
-            pdf += center_weight * stats.multivariate_normal.pdf(x, center_mean, center_cov)
-        return pdf
-
-    def conditional_pdf(self, x, y):
-        # evaluate joint mean & covariance
-        joint_mean = self.joint_mean()
-        joint_var  = self.joint_cov()
-        # evaluate conditional PDF
-        pdf = np.zeros(x.shape[0])
-        for i in range(len(self.centers)):
-            cond_mean   = joint_mean[0] + joint_var[0,1]/joint_var[1,1]*(y - joint_mean[1])
-            center_cov  = joint_var[0,0] - joint_var[0,1]/joint_var[1,1] * joint_var[1,0]
-            print(cond_mean)
-            print(center_cov)
-            cond_weight = 1 ### FIX
-            pdf += cond_weight * stats.multivariate_normal.pdf(x - cond_mean, np.zeros(1,), center_cov)
-        return pdf
-
-def PinWheel(ToyDatasets):
-    def __init__(self):
-
-        self.radial_std = 0.3
-        self.tangential_std = 0.1
-        self.num_classes = 5
-        self.rate = 0.25
-
-    def sample_joint(self, N):
-
-        # sample radians
-        rads = np.linspace(0, 2 * np.pi, self.num_classes, endpoint=False)
-
-        # sample labels
-        num_per_class = N // self.num_classes
-        features = self.rng.randn(self.num_classes*num_per_class, 2) \
-            * np.array([radial_std, tangential_std])
-        features[:, 0] += 1.
-        labels = np.repeat(np.arange(num_classes), num_per_class)
-
-        angles = rads[labels] + rate * np.exp(features[:, 0])
-        rotations = np.stack([np.cos(angles), -np.sin(angles), np.sin(angles), np.cos(angles)])
-        rotations = np.reshape(rotations.T, (-1, 2, 2))
-
-        data = 2 * self.rng.permutation(np.einsum("ti,tij->tj", features, rotations))
-
-    def joint_pdf(self, N):
-        raise ValueError('not implemented')
-
 if __name__=='__main__':
 
-    pi = GaussianMixture()
+    pi = tanh_v2()
     Xs = pi.sample_joint(5000)
 
     # define grid
     Ng = 100
-    xx = np.linspace(-4.25,4.25,Ng)
-    [Xg, Yg] = np.meshgrid(xx, xx)
+    xx = np.linspace(-3,3,Ng)
+    yy = np.linspace(-0.8,0.8,Ng)
+    [Xg, Yg] = np.meshgrid(xx, yy)
     
     # evaluate density
-    pdf_g = pi.joint_pdf(np.vstack((Xg.flatten(), Yg.flatten())).T)
+    pdf_g = pi.joint_pdf(Xg.flatten()[:,None], Yg.flatten()[:,None])
     pdf_g = pdf_g.reshape((Ng, Ng))
 
     import matplotlib.pyplot as plt
@@ -471,18 +332,18 @@ if __name__=='__main__':
     plt.figure()
     plt.contourf(Xg, Yg, pdf_g)
     plt.plot(Xs[:,0], Xs[:,1], '.r')
+    plt.xlim(-3,3)
+    plt.ylim(-0.8,0.8)
     plt.colorbar()
     plt.show()
 
     # evaluate conditional density
-    yst = 1.0
-    pdf_cond = pi.conditional_pdf(xx[:,None], np.tile(yst, (Ng,1)))
-
-    # extract approximate conditional samples
-    idx = np.where(np.abs(Xs[:,1] - yst) < 1e-1)
+    yst = 0.5
+    pdf_cond = pi.conditional_pdf(np.linspace(-3,3,1000)[:,None], np.tile(yst,(1000,1)))
+    cond_samples = pi.sample_conditional(yst, 1000)
 
     plt.figure()
-    plt.plot(xx, pdf_cond, '-b')
-    plt.hist(Xs[idx[0],0], bins=30, density=True)
+    plt.plot(np.linspace(-3,3,1000), pdf_cond, '-b')
+    plt.hist(cond_samples, bins=30, density=True)
     plt.show()
 

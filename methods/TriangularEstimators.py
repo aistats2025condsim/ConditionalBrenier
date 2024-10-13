@@ -5,12 +5,10 @@ import numpy as np
 import ott
 from ott.geometry import pointcloud
 from ott.solvers import linear
-#from ott.problems.linear import linear_problem
 from ott.solvers.linear import sinkhorn
 from ott.tools import sinkhorn_divergence
 from scipy.special import logsumexp
 from sklearn.neighbors import NearestNeighbors
-
 
 ### neural OT from OTT
 from ott.neural.methods import neuraldual
@@ -21,14 +19,10 @@ import dataclasses
 from scipy.stats import gaussian_kde  as orig_kde
 import ott.utils as utils
 
-#from jax import config
-#config.update("jax_enable_x64", True)
-from jax_fm_utils import *
 import optax
 from jax import random, grad, vmap
 from jax.scipy.optimize import minimize
 import time
-
 
 from typing import Iterator, Literal, NamedTuple, Optional, Tuple
 
@@ -119,37 +113,6 @@ class EntropicTransport_OTT:
         cond_prob = jax.nn.softmax( (self.gYjs - cost)/self.eps )
         return (-x + jnp.sum(self.target*cond_prob.reshape(-1,1),axis=0))/t
         
-    def evaluate_bridge(self, source_new, tau, Nsteps):
-        vmap_drift = jax.vmap(self.drift, in_axes=(0, None))
-        xinit = jnp.array(source_new)
-        dt = tau/Nsteps
-        k=0
-        t=0.0
-        dim=source_new.shape[1]
-        x = xinit.copy()
-
-        while k < Nsteps+1:
-            bteps_x = vmap_drift(x,1-t)
-            eta = jnp.array(np.random.multivariate_normal(jnp.zeros(dim), jnp.eye(dim), size=xinit.shape[0]))
-            x += (dt * bteps_x) + np.sqrt(dt * self.eps/2)*eta
-            k += 1
-            t = k*dt
-        return x
-
-    def inverse_map(self, target_new, x0):
-        # add warning for possibly unstable computation 
-        # T(x) = y, min_x |T(x) - y|^2, 2*(T(x) - y)*grad(T(x))
-        batch_size, dim = target_new.shape
-        obj = lambda x: (jnp.linalg.norm(self.potentials.transport(x.reshape((batch_size,dim))) - target_new,ord=2,axis=1)**2).sum()
-        #grad_obj = lambda x: (self.potentials.transport(x) - target_new)*self.potentials.gradient(x)
-        # compute minimum of objective
-        print(x0)
-        print(obj(x0))
-        res = minimize(obj, jnp.array(x0).reshape(-1), tol=1e-8, method='BFGS')
-        print(obj(res.x))
-        print(res)
-        return jnp.array(res.x.reshape((batch_size,-1)))
-
 class NNTransport:
     def __init__(self, maxiters=1000000):
         self.maxiters = maxiters
@@ -228,11 +191,6 @@ class KDE:
     def _create_sample_generators(self) -> Iterator[jnp.array]:
         rng = self.rng
         while True:
-          #rng1, rng2, rng = jax.random.split(rng, 3)
-#          means = jax.random.choice(rng1, self.centers, (self.batch_size,))
-#          normal_samples = jax.random.normal(rng2, (self.batch_size, 2))
-#          samples = self.scale * means + (self.std ** 2) * normal_samples
-          #r = np.array(rng)
           samples = self.kde.resample(self.batch_size).T
           yield samples
 
@@ -270,7 +228,7 @@ def minibatch_samplers(
     #         KDE(target_data, batch_size=valid_batch_size, rng=rng4)
     #     )
     # )
-    return train_dataset #, valid_dataset, dim_data
+    return train_dataset #, valid_dataset
 
 def training_callback(step, learned_potentials):
     if step % 50 == 0:
@@ -290,20 +248,6 @@ class ICNNTransport:
                                 target_data = target,
                                 train_batch_size=self.batch_size)
         
-        # initialize models and optimizers
-        #eval_data_source = generate_source(500)
-        #eval_data_target = generate_target(500)
-
-        # neural_f = icnn.ICNN(
-        #     dim_data=self.input_dim,
-        #     dim_hidden=[self.hidden_dim, self.hidden_dim, self.hidden_dim, self.hidden_dim],
-        #     pos_weights=True,
-        #     gaussian_map_samples=(
-        #         source,
-        #         target,
-        #     ),  # initialize the ICNN with source and target samples
-        # )
-
         neural_f = potentials.PotentialMLP(
             dim_hidden=[self.hidden_dim, self.hidden_dim, self.hidden_dim, self.hidden_dim],
             is_potential=True,  # returns the gradient of the potential.  
@@ -328,7 +272,6 @@ class ICNNTransport:
             num_train_iters=self.n_iters,
             valid_freq=1000, 
             log_freq=1000
-            #pos_weights=True, #### put back if neural_f is an ICNN
         )
         self.learned_potentials = neural_dual_solver(
             *train_dataloaders,
@@ -336,8 +279,7 @@ class ICNNTransport:
             #*valid_dataloaders,
             callback=training_callback,
         )
-        #clear_output()
-        #return learned_potentials
+
     def evaluate_map(self,source_new):
         return self.learned_potentials.transport(source_new)
     

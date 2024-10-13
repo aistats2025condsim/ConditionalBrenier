@@ -14,11 +14,8 @@ def empirical_wasserstein_distance(X, Y):
     """
     # Compute the pairwise squared Euclidean distances
     M = ot.dist(X, Y, 'sqeuclidean')
-    # Compute the Wasserstein-2 distance
-    # Compute the optimal transport plan
-    #transport_plan = 
-    # The Wasserstein-2 distance is the square root of the sum of the transport plan cost
-    return ot.emd2([], [], M,numItermax=1000000) #np.sum(transport_plan * M)
+    # Compute the optimal transport plan and the Wasserstein-2 distance 
+    return ot.emd2([], [], M,numItermax=1000000)
 
 def median_bandwidth_heuristic(X, Y):
     """
