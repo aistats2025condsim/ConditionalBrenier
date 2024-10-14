@@ -5,7 +5,7 @@ import pykeops
 pykeops.set_verbose(False)
 
 ###necessary imports
-import numpy as np
+#import numpy as np
 import torch
 from math import *
 
@@ -126,7 +126,6 @@ def lse_online(ε,C_xy, f_y, log_conv=None):
 
 def marginal_online(ε, C_xy, b_x, a_y, log_conv=None):
     x,y = C_xy
-    
     return log_conv( torch.Tensor([1/ε]).type_as(x), x, y, b_x.view(-1,1), a_y.view(-1,1) )
 
 
